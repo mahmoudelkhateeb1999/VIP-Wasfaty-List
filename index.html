@@ -65,7 +65,7 @@
         <div class="flex items-center gap-2">
           <span class="text-2xl">☀️</span>
           <div>
-            <h1 class="font-extrabold text-lg text-emerald-800 leading-tight">نظام VIP وصفتي - شمس</h1>
+            <h1 class="font-extrabold text-lg text-emerald-800 leading-tight">نظام VIP وصفتي - شمس <span class="text-[11px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">v2.1</span></h1>
             <p id="branchBadge" class="text-xs text-gray-500 font-semibold"></p>
           </div>
         </div>
@@ -126,20 +126,28 @@
           </div>
         </div>
 
-        <!-- قسم وصفات اليوم -->
-        <div class="bg-white rounded-xl shadow-sm p-4 border">
+        <!-- 1. قسم وصفات اليوم -->
+        <div class="bg-white rounded-xl shadow-sm p-4 border border-emerald-200">
           <h2 class="text-lg font-extrabold text-emerald-800 mb-3 flex items-center gap-2">
             <span>🔔</span> وصفات مستحقة للصرف اليوم (أو متأخرة لم تُصرف)
           </h2>
           <div id="todayList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
         </div>
 
-        <!-- قسم وصفات الغد -->
-        <div class="bg-white rounded-xl shadow-sm p-4 border">
+        <!-- 2. قسم وصفات الغد -->
+        <div class="bg-white rounded-xl shadow-sm p-4 border border-amber-200">
           <h2 class="text-lg font-extrabold text-amber-700 mb-3 flex items-center gap-2">
             <span>⏳</span> وصفات مستحقة غداً (للتجهيز المسبق)
           </h2>
           <div id="tomorrowList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+        </div>
+
+        <!-- 3. قسم الوصفات القادمة المجدولة (بعد الغد) -->
+        <div class="bg-white rounded-xl shadow-sm p-4 border border-blue-200">
+          <h2 class="text-lg font-extrabold text-blue-800 mb-3 flex items-center gap-2">
+            <span>🗓️</span> وصفات مجدولة للأيام القادمة
+          </h2>
+          <div id="upcomingList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
         </div>
       </section>
 
@@ -308,12 +316,33 @@
       return p || toEnglishDigits(phoneStr);
     }
 
-    // دالة ذكية لتوحيد صيغة التاريخ القادمة من جوجل شيت إلى YYYY-MM-DD
+    // دالة جذرية لتحويل أي صيغة تاريخ (بما فيها المقطوعة بـ GM من جوجل شيت) إلى YYYY-MM-DD
     function normalizeDateStr(val) {
       if (!val) return '';
       const s = String(val).trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-      const d = new Date(s);
+      
+      // 1. إذا كان جاهزاً بصيغة 2026-10-26
+      const isoMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (isoMatch) {
+        return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+      }
+
+      // 2. إذا كان بصيغة جوجل شيت النصية: Mon Oct 26 2026 00:00:00 GM
+      const months = {
+        Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
+        Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12'
+      };
+      const gSheetMatch = s.match(/([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})/);
+      if (gSheetMatch && months[gSheetMatch[1]]) {
+        const mm = months[gSheetMatch[1]];
+        const dd = String(gSheetMatch[2]).padStart(2, '0');
+        const yyyy = gSheetMatch[3];
+        return `${yyyy}-${mm}-${dd}`;
+      }
+
+      // 3. محاولة أخيرة عبر Date بعد إزالة كلمة GM المقطوعة
+      const cleaned = s.replace(/\s*GM.*$/, '');
+      const d = new Date(cleaned);
       if (!isNaN(d.getTime())) {
         const yyyy = d.getFullYear();
         const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -480,6 +509,7 @@
 
       const todayRecs = allRecords.filter(r => r.nextDate && r.nextDate <= today);
       const tomorrowRecs = allRecords.filter(r => r.nextDate === tomorrow);
+      const upcomingRecs = allRecords.filter(r => r.nextDate > tomorrow).sort((a, b) => a.nextDate.localeCompare(b.nextDate));
 
       document.getElementById('statToday').textContent = todayRecs.length;
       document.getElementById('statTomorrow').textContent = tomorrowRecs.length;
@@ -491,6 +521,7 @@
 
       const todayContainer = document.getElementById('todayList');
       const tomorrowContainer = document.getElementById('tomorrowList');
+      const upcomingContainer = document.getElementById('upcomingList');
 
       todayContainer.innerHTML = todayRecs.length 
         ? todayRecs.map(r => createCardHTML(r, true)).join('') 
@@ -499,6 +530,10 @@
       tomorrowContainer.innerHTML = tomorrowRecs.length 
         ? tomorrowRecs.map(r => createCardHTML(r, false)).join('') 
         : '<p class="text-gray-400 text-sm col-span-2 text-center py-6">لا توجد وصفات مستحقة غداً</p>';
+
+      upcomingContainer.innerHTML = upcomingRecs.length 
+        ? upcomingRecs.map(r => createCardHTML(r, false)).join('') 
+        : '<p class="text-gray-400 text-sm col-span-2 text-center py-6">لا توجد وصفات مجدولة للأيام القادمة</p>';
     }
 
     // بناء كارت المريض مع أزرار النسخ السريع لكل البيانات
@@ -520,7 +555,7 @@
                 <div class="flex items-center gap-2">
                   <h3 class="font-extrabold text-base text-gray-800">${r.patientName}</h3>
                   <button type="button" onclick="copyText('${r.patientName}', 'اسم المريض')" 
-                          class="text-gray-400 hover:text-emerald-600 text-xs transition" title="نسخ اسم المريض">📋</button>
+                          class="bg-gray-200 hover:bg-emerald-600 hover:text-white text-gray-700 px-2 py-0.5 rounded text-[11px] font-bold transition" title="نسخ اسم المريض">📋 نسخ</button>
                 </div>
                 <span class="text-xs text-gray-500 font-semibold">فرع: ${r.branchName}</span>
               </div>
@@ -559,8 +594,8 @@
 
               <!-- الموعد القادم -->
               <div class="flex items-center justify-between bg-gray-50 px-2 py-1.5 rounded border border-gray-100">
-                <div><span class="text-gray-400">الموعد:</span> <strong class="font-mono ${isLate ? 'text-red-600' : ''}">${r.nextDate}</strong></div>
-                ${isLate ? '<span class="text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded">متأخر</span>' : ''}
+                <div><span class="text-gray-400">الموعد:</span> <strong class="font-mono ${isLate ? 'text-red-600' : 'text-emerald-800'}">${r.nextDate}</strong></div>
+                ${isLate ? '<span class="text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded">متأخر</span>' : '<span class="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded">مجدول</span>'}
               </div>
             </div>
             ${r.notes ? `<p class="text-xs text-amber-800 bg-amber-50 p-2 rounded mb-3">📝 <strong>ملاحظة:</strong> ${r.notes}</p>` : ''}
