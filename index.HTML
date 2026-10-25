@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>نظام VIP وصفتي - صيدليات شمس</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Cairo', sans-serif; background-color: #f3f4f6; }
+    .tab-active { border-bottom: 3px solid #059669; color: #059669; font-weight: 700; }
+  </style>
+</head>
+<body class="min-h-screen text-gray-800">
+
+  <!-- شاشة التحميل (Loading Overlay) -->
+  <div id="loader" class="fixed inset-0 bg-black bg-opacity-40 z-50 hidden flex items-center justify-center">
+    <div class="bg-white p-5 rounded-xl shadow-lg flex items-center gap-3">
+      <div class="w-6 h-6 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+      <span class="font-bold text-gray-700">جاري معالجة البيانات...</span>
+    </div>
+  </div>
+
+  <!-- 1. شاشة تسجيل الدخول -->
+  <div id="loginScreen" class="min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-xl p-8 border-t-8 border-emerald-600">
+      <div class="text-center mb-6">
+        <div class="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 text-emerald-700 rounded-full mb-3 text-2xl font-extrabold">
+          ☀️
+        </div>
+        <h1 class="text-2xl font-extrabold text-gray-800">صيدليات شمس</h1>
+        <p class="text-sm text-gray-500 mt-1">نظام متابعة عملاء VIP وصفتي</p>
+      </div>
+
+      <form onsubmit="handleLogin(event)" class="space-y-4">
+        <div>
+          <label class="block text-sm font-bold text-gray-700 mb-1">رقم الفرع / اسم المستخدم</label>
+          <input type="text" id="loginUser" required placeholder="مثال: 101 أو admin" 
+                 class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-bold text-gray-700 mb-1">الرقم السري (PIN Code)</label>
+          <input type="password" id="loginPin" required placeholder="••••" 
+                 class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+        </div>
+        <div id="loginError" class="text-red-600 text-sm font-semibold hidden text-center"></div>
+        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow transition">
+          تسجيل الدخول
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. الشاشة الرئيسية للنظام -->
+  <div id="appScreen" class="hidden">
+    <!-- الهيدر -->
+    <header class="bg-white shadow-sm border-b sticky top-0 z-30">
+      <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">☀️</span>
+          <div>
+            <h1 class="font-extrabold text-lg text-emerald-800 leading-tight">نظام VIP وصفتي - شمس</h1>
+            <p id="branchBadge" class="text-xs text-gray-500 font-semibold"></p>
+          </div>
+        </div>
+
+        <!-- فلتر الفروع (يظهر للمدير فقط) -->
+        <div id="adminControls" class="hidden flex items-center gap-2">
+          <label class="text-xs font-bold text-gray-600">عرض فرع:</label>
+          <select id="adminBranchFilter" onchange="loadRecords()" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm font-bold bg-gray-50">
+            <option value="ALL">جميع الفروع</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button onclick="loadRecords()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-bold transition">
+            🔄 تحديث
+          </button>
+          <button onclick="logout()" class="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-sm font-bold transition">
+            خروج
+          </button>
+        </div>
+      </div>
+
+      <!-- شريط التنقل (Tabs) -->
+      <div class="max-w-6xl mx-auto px-4 flex gap-6 border-t overflow-x-auto">
+        <button onclick="switchTab('followUp')" id="tabBtn_followUp" class="py-3 px-2 text-sm font-semibold whitespace-nowrap tab-active">
+          📅 متابعة اليوم والغد <span id="badgeCount" class="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full mr-1">0</span>
+        </button>
+        <button onclick="switchTab('addRx')" id="tabBtn_addRx" class="py-3 px-2 text-sm font-semibold text-gray-500 whitespace-nowrap">
+          ➕ تسجيل وصفة VIP جديدة
+        </button>
+        <button onclick="switchTab('searchAll')" id="tabBtn_searchAll" class="py-3 px-2 text-sm font-semibold text-gray-500 whitespace-nowrap">
+          🔍 البحث والسجل الكامل
+        </button>
+      </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto p-4">
+
+      <!-- أ. واجهة متابعة اليوم والغد -->
+      <section id="tab_followUp" class="space-y-6">
+        <!-- إحصائيات سريعة -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="bg-white p-4 rounded-xl shadow-sm border-r-4 border-emerald-500">
+            <p class="text-xs text-gray-500 font-bold">مستحق اليوم (أو متأخر)</p>
+            <p id="statToday" class="text-2xl font-extrabold text-emerald-700 mt-1">0</p>
+          </div>
+          <div class="bg-white p-4 rounded-xl shadow-sm border-r-4 border-amber-500">
+            <p class="text-xs text-gray-500 font-bold">مستحق غداً</p>
+            <p id="statTomorrow" class="text-2xl font-extrabold text-amber-600 mt-1">0</p>
+          </div>
+          <div class="bg-white p-4 rounded-xl shadow-sm border-r-4 border-blue-500">
+            <p class="text-xs text-gray-500 font-bold">إجمالي عملاء VIP</p>
+            <p id="statTotal" class="text-2xl font-extrabold text-blue-700 mt-1">0</p>
+          </div>
+          <div class="bg-white p-4 rounded-xl shadow-sm border-r-4 border-purple-500">
+            <p class="text-xs text-gray-500 font-bold">القيمة المتوقعة اليوم</p>
+            <p id="statValue" class="text-2xl font-extrabold text-purple-700 mt-1">0 ر.س</p>
+          </div>
+        </div>
+
+        <!-- قسم وصفات اليوم -->
+        <div class="bg-white rounded-xl shadow-sm p-4 border">
+          <h2 class="text-lg font-extrabold text-emerald-800 mb-3 flex items-center gap-2">
+            <span>🔔</span> وصفات مستحقة للصرف اليوم (أو متأخرة لم تُصرف)
+          </h2>
+          <div id="todayList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+        </div>
+
+        <!-- قسم وصفات الغد -->
+        <div class="bg-white rounded-xl shadow-sm p-4 border">
+          <h2 class="text-lg font-extrabold text-amber-700 mb-3 flex items-center gap-2">
+            <span>⏳</span> وصفات مستحقة غداً (للتجهيز المسبق)
+          </h2>
+          <div id="tomorrowList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+        </div>
+      </section>
+
+      <!-- ب. واجهة تسجيل وصفة جديدة -->
+      <section id="tab_addRx" class="hidden max-w-2xl mx-auto">
+        <div class="bg-white rounded-xl shadow-sm p-6 border">
+          <h2 class="text-xl font-extrabold text-gray-800 mb-4 border-b pb-2">تسجيل وصفة VIP جديدة (+70 ريال)</h2>
+          
+          <form id="addRxForm" onsubmit="handleAddRx(event)" class="space-y-4">
+            <div id="adminAddBranchSelectDiv" class="hidden">
+              <label class="block text-sm font-bold text-gray-700 mb-1">اختر الفرع التابع له المريض *</label>
+              <select id="addRxBranchSelect" class="w-full px-3 py-2 border rounded-lg bg-gray-50 font-bold"></select>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">اسم المريض *</label>
+                <input type="text" id="rxPatientName" required placeholder="الاسم الثلاثي" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+              </div>
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">رقم الهوية / الإقامة *</label>
+                <input type="text" id="rxNationalId" required placeholder="10XXXXXXXX" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">رقم الجوال *</label>
+                <input type="tel" id="rxPhone" required placeholder="05XXXXXXXX" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+              </div>
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">رقم الوصفة *</label>
+                <input type="text" id="rxNumber" required placeholder="رقم وصفة وصفتي" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+              </div>
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">السعر التقريبي (ريال) *</label>
+                <input type="number" id="rxPrice" required min="70" placeholder="مثال: 250" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-emerald-50 p-3 rounded-lg border border-emerald-200">
+              <div>
+                <label class="block text-xs font-bold text-emerald-900 mb-1">تاريخ الصرف الفعلي</label>
+                <input type="date" id="rxDispenseDate" onchange="calculateNextDate()" required class="w-full px-3 py-2 border rounded-lg bg-white">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-emerald-900 mb-1">مدة الوصفة (بالأيام)</label>
+                <input type="number" id="rxDuration" value="30" min="1" max="365" onchange="calculateNextDate()" onkeyup="calculateNextDate()" required class="w-full px-3 py-2 border rounded-lg bg-white font-bold text-center">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-emerald-900 mb-1">موعد الصرف القادم (تلقائي)</label>
+                <input type="date" id="rxNextDate" required class="w-full px-3 py-2 border rounded-lg bg-gray-100 font-bold text-emerald-800">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-bold text-gray-700 mb-1">ملاحظات / أهم الأدوية بالوصفة (اختياري)</label>
+              <input type="text" id="rxNotes" placeholder="مثال: أنسولين، دواء ضغط، يحتاج توفير مسبق..." class="w-full px-3 py-2 border rounded-lg">
+            </div>
+
+            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow transition text-lg">
+              💾 حفظ وتسجيل الوصفة
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ج. واجهة البحث السريع والسجل الكامل -->
+      <section id="tab_searchAll" class="hidden space-y-4">
+        <div class="bg-white p-4 rounded-xl shadow-sm border">
+          <div class="flex flex-col md:flex-row justify-between items-center gap-3 mb-4">
+            <h2 class="text-lg font-extrabold text-gray-800">🔍 البحث السريع في سجل عملاء VIP</h2>
+            <input type="text" id="searchInput" onkeyup="renderSearchTable()" placeholder="ابحث باسم المريض، رقم الهوية، الجوال، أو الوصفة..." 
+                   class="w-full md:w-96 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500">
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-right border-collapse">
+              <thead>
+                <tr class="bg-gray-100 text-gray-700 border-b">
+                  <th class="p-3">المريض</th>
+                  <th class="p-3">الهوية</th>
+                  <th class="p-3">الجوال</th>
+                  <th class="p-3">رقم الوصفة</th>
+                  <th class="p-3">السعر</th>
+                  <th class="p-3">الموعد القادم</th>
+                  <th class="p-3">الفرع</th>
+                  <th class="p-3">إجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="allRecordsTable" class="divide-y"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- نافذة (Modal) تجديد الصرف -->
+  <div id="renewModal" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl">
+      <h3 class="text-lg font-extrabold text-gray-800 mb-2">✅ تأكيد صرف وتجديد الوصفة</h3>
+      <p id="renewModalPatient" class="text-sm text-emerald-700 font-bold mb-4"></p>
+      
+      <form onsubmit="submitRenew(event)" class="space-y-3">
+        <input type="hidden" id="renewRecordId">
+        <input type="hidden" id="renewBranchId">
+        <div>
+          <label class="block text-xs font-bold text-gray-700 mb-1">رقم الوصفة الجديدة (أو اتركه كما هو)</label>
+          <input type="text" id="renewRxNumber" required class="w-full px-3 py-2 border rounded-lg font-bold">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-gray-700 mb-1">تاريخ الصرف اليوم</label>
+            <input type="date" id="renewDispenseDate" onchange="calcRenewNextDate()" required class="w-full px-3 py-2 border rounded-lg">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-gray-700 mb-1">المدة القادمة (أيام)</label>
+            <input type="number" id="renewDuration" value="30" onchange="calcRenewNextDate()" onkeyup="calcRenewNextDate()" required class="w-full px-3 py-2 border rounded-lg text-center font-bold">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-gray-700 mb-1">الموعد القادم الجديد</label>
+          <input type="date" id="renewNextDate" required class="w-full px-3 py-2 border rounded-lg bg-emerald-50 font-bold text-emerald-800">
+        </div>
+        <div class="flex gap-2 pt-3">
+          <button type="submit" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg">تأكيد التجديد</button>
+          <button type="button" onclick="closeRenewModal()" class="px-4 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold">إلغاء</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================
+    // رابط Google Apps Script Web App الخاص بك
+    // =========================================================
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxV4WctQ6GjZIxBm6M7mLTwkuXWQFWAMwATaFT71-Tf7MyUlQ2oQmtZuNQYtniNyE1e/exec';
+
+    let currentUser = null;
+    let allRecords = [];
+
+    function showLoader(show) {
+      document.getElementById('loader').classList.toggle('hidden', !show);
+    }
+
+    function getTodayStr(offsetDays = 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    // دالة مساعدة لإرسال الطلبات لـ Google Apps Script بدون مشاكل CORS
+    async function apiCall(payload) {
+      const res = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    }
+
+    // 1. تسجيل الدخول
+    async function handleLogin(e) {
+      e.preventDefault();
+      const username = document.getElementById('loginUser').value.trim();
+      const pin = document.getElementById('loginPin').value.trim();
+      const errBox = document.getElementById('loginError');
+      errBox.classList.add('hidden');
+
+      showLoader(true);
+      try {
+        const data = await apiCall({ action: 'login', username, pin });
+        showLoader(false);
+
+        if (data.success) {
+          currentUser = data;
+          localStorage.setItem('shams_vip_user', JSON.stringify(data));
+          initApp();
+        } else {
+          errBox.textContent = data.message || 'خطأ في تسجيل الدخول';
+          errBox.classList.remove('hidden');
+        }
+      } catch (err) {
+        showLoader(false);
+        errBox.textContent = 'تعذر الاتصال بالخادم، تأكد من تفعيل صلاحية Anyone في إعدادات النشر.';
+        errBox.classList.remove('hidden');
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem('shams_vip_user');
+      currentUser = null;
+      document.getElementById('appScreen').classList.add('hidden');
+      document.getElementById('loginScreen').classList.remove('hidden');
+    }
+
+    function initApp() {
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('appScreen').classList.remove('hidden');
+      document.getElementById('branchBadge').textContent = `الفرع: ${currentUser.branchName} (${currentUser.branchId})`;
+
+      // إعداد تواريخ الفورم الافتراضية
+      document.getElementById('rxDispenseDate').value = getTodayStr(0);
+      calculateNextDate();
+
+      // لو الحساب مدير (Admin)
+      if (currentUser.role === 'admin') {
+        document.getElementById('adminControls').classList.remove('hidden');
+        document.getElementById('adminAddBranchSelectDiv').classList.remove('hidden');
+        
+        const filterSel = document.getElementById('adminBranchFilter');
+        const addSel = document.getElementById('addRxBranchSelect');
+        filterSel.innerHTML = '<option value="ALL">جميع الفروع</option>';
+        addSel.innerHTML = '';
+
+        currentUser.branches.forEach(b => {
+          filterSel.innerHTML += `<option value="${b.id}">${b.name} (${b.id})</option>`;
+          addSel.innerHTML += `<option value="${b.id}">${b.name} (${b.id})</option>`;
+        });
+      } else {
+        document.getElementById('adminControls').classList.add('hidden');
+        document.getElementById('adminAddBranchSelectDiv').classList.add('hidden');
+      }
+
+      loadRecords();
+    }
+
+    async function loadRecords() {
+      showLoader(true);
+      const targetBranch = currentUser.role === 'admin' 
+        ? document.getElementById('adminBranchFilter').value 
+        : currentUser.branchId;
+
+      try {
+        const data = await apiCall({
+          action: 'getData',
+          role: currentUser.role,
+          targetBranch: targetBranch
+        });
+        showLoader(false);
+        if (data.success) {
+          allRecords = data.records || [];
+          renderFollowUp();
+          renderSearchTable();
+        }
+      } catch (err) {
+        showLoader(false);
+        alert('حدث خطأ أثناء جلب البيانات');
+      }
+    }
+
+    // حساب الموعد القادم تلقائياً
+    function calculateNextDate() {
+      const disp = document.getElementById('rxDispenseDate').value;
+      const dur = parseInt(document.getElementById('rxDuration').value) || 30;
+      if (disp) {
+        const d = new Date(disp);
+        d.setDate(d.getDate() + dur);
+        document.getElementById('rxNextDate').value = d.toISOString().split('T')[0];
+      }
+    }
+
+    // عرض وصفات اليوم والغد
+    function renderFollowUp() {
+      const today = getTodayStr(0);
+      const tomorrow = getTodayStr(1);
+
+      // اليوم يشمل تاريخ اليوم أو التواريخ المتأخرة التي لم يتم تجديدها
+      const todayRecs = allRecords.filter(r => r.nextDate <= today);
+      const tomorrowRecs = allRecords.filter(r => r.nextDate === tomorrow);
+
+      document.getElementById('statToday').textContent = todayRecs.length;
+      document.getElementById('statTomorrow').textContent = tomorrowRecs.length;
+      document.getElementById('statTotal').textContent = allRecords.length;
+      document.getElementById('badgeCount').textContent = todayRecs.length;
+
+      const totalVal = todayRecs.reduce((sum, r) => sum + (parseFloat(r.price) || 0), 0);
+      document.getElementById('statValue').textContent = totalVal + ' ر.س';
+
+      const todayContainer = document.getElementById('todayList');
+      const tomorrowContainer = document.getElementById('tomorrowList');
+
+      todayContainer.innerHTML = todayRecs.length 
+        ? todayRecs.map(r => createCardHTML(r, true)).join('') 
+        : '<p class="text-gray-400 text-sm col-span-2 text-center py-6">لا توجد وصفات مستحقة للصرف اليوم 🎉</p>';
+
+      tomorrowContainer.innerHTML = tomorrowRecs.length 
+        ? tomorrowRecs.map(r => createCardHTML(r, false)).join('') 
+        : '<p class="text-gray-400 text-sm col-span-2 text-center py-6">لا توجد وصفات مستحقة غداً</p>';
+    }
+
+    // بناء كارت المريض ورسالة الواتساب الذكية
+    function createCardHTML(r, isToday) {
+      let cleanPhone = r.phone.replace(/\D/g, '');
+      if (cleanPhone.startsWith('05')) cleanPhone = '966' + cleanPhone.substring(1);
+      else if (cleanPhone.startsWith('5')) cleanPhone = '966' + cleanPhone;
+
+      const msg = `السلام عليكم، معكم صيدلية شمس (${r.branchName}). نود إعلامك بأن الوصفة الخاصة بك عبر منصة "وصفتي" أصبحت جاهزة للصرف اليوم. يسعدنا زيارتكم للفرع لاستلامها، أو يمكننا توصيلها حتى باب المنزل. نسعد دائماً بخدمتكم`;
+      const waLink = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+
+      const isLate = r.nextDate < getTodayStr(0);
+
+      return `
+        <div class="border rounded-xl p-4 bg-gray-50 hover:shadow-md transition flex flex-col justify-between ${isLate ? 'border-red-300 bg-red-50/30' : 'border-gray-200'}">
+          <div>
+            <div class="flex justify-between items-start mb-2">
+              <div>
+                <h3 class="font-extrabold text-base text-gray-800">${r.patientName}</h3>
+                <span class="text-xs text-gray-500 font-semibold">فرع: ${r.branchName}</span>
+              </div>
+              <span class="bg-emerald-100 text-emerald-800 text-xs font-extrabold px-2.5 py-1 rounded-full">
+                ${r.price} ر.س
+              </span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 text-xs text-gray-700 my-3 bg-white p-2.5 rounded-lg border">
+              <div><span class="text-gray-400">الهوية:</span> <strong class="select-all">${r.nationalId}</strong></div>
+              <div><span class="text-gray-400">الوصفة:</span> <strong class="select-all text-emerald-700">${r.rxNumber}</strong></div>
+              <div><span class="text-gray-400">الجوال:</span> <strong dir="ltr">${r.phone}</strong></div>
+              <div><span class="text-gray-400">الموعد:</span> <strong class="${isLate ? 'text-red-600' : ''}">${r.nextDate} ${isLate ? '(متأخر)' : ''}</strong></div>
+            </div>
+            ${r.notes ? `<p class="text-xs text-amber-800 bg-amber-50 p-2 rounded mb-3">📝 <strong>ملاحظة:</strong> ${r.notes}</p>` : ''}
+          </div>
+
+          <div class="flex flex-wrap gap-2 pt-2 border-t">
+            <a href="${waLink}" target="_blank" class="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg text-center flex items-center justify-center gap-1">
+              💬 واتساب جاهز
+            </a>
+            <button onclick="openRenewModal('${r.id}', '${r.branchId}', '${r.patientName}', '${r.rxNumber}', ${r.duration})" 
+                    class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold py-2 px-3 rounded-lg">
+              ✅ تم الصرف والتجديد
+            </button>
+            ${isToday ? `
+            <button onclick="postponeTomorrow('${r.id}', '${r.branchId}')" 
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold py-2 px-3 rounded-lg" title="تأجيل للغد">
+              ⏳ للغد
+            </button>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    // إضافة وصفة جديدة
+    async function handleAddRx(e) {
+      e.preventDefault();
+      const branchId = currentUser.role === 'admin' 
+        ? document.getElementById('addRxBranchSelect').value 
+        : currentUser.branchId;
+
+      const payload = {
+        action: 'addRecord',
+        branchId: branchId,
+        patientName: document.getElementById('rxPatientName').value.trim(),
+        nationalId: document.getElementById('rxNationalId').value.trim(),
+        phone: document.getElementById('rxPhone').value.trim(),
+        rxNumber: document.getElementById('rxNumber').value.trim(),
+        price: document.getElementById('rxPrice').value.trim(),
+        dispenseDate: document.getElementById('rxDispenseDate').value,
+        duration: document.getElementById('rxDuration').value,
+        nextDate: document.getElementById('rxNextDate').value,
+        notes: document.getElementById('rxNotes').value.trim()
+      };
+
+      showLoader(true);
+      try {
+        const data = await apiCall(payload);
+        showLoader(false);
+
+        if (data.success) {
+          alert('✅ تم تسجيل الوصفة بنجاح في شيت الفرع!');
+          document.getElementById('addRxForm').reset();
+          document.getElementById('rxDispenseDate').value = getTodayStr(0);
+          document.getElementById('rxDuration').value = 30;
+          calculateNextDate();
+          loadRecords();
+          switchTab('followUp');
+        } else {
+          alert('حدث خطأ: ' + data.message);
+        }
+      } catch (err) {
+        showLoader(false);
+        alert('حدث خطأ أثناء الاتصال بالخادم');
+      }
+    }
+
+    // نافذة التجديد
+    function openRenewModal(id, branchId, name, rxNum, duration) {
+      document.getElementById('renewRecordId').value = id;
+      document.getElementById('renewBranchId').value = branchId;
+      document.getElementById('renewModalPatient').textContent = `المريض: ${name}`;
+      document.getElementById('renewRxNumber').value = rxNum;
+      document.getElementById('renewDispenseDate').value = getTodayStr(0);
+      document.getElementById('renewDuration').value = duration || 30;
+      calcRenewNextDate();
+      document.getElementById('renewModal').classList.remove('hidden');
+    }
+
+    function closeRenewModal() {
+      document.getElementById('renewModal').classList.add('hidden');
+    }
+
+    function calcRenewNextDate() {
+      const disp = document.getElementById('renewDispenseDate').value;
+      const dur = parseInt(document.getElementById('renewDuration').value) || 30;
+      if (disp) {
+        const d = new Date(disp);
+        d.setDate(d.getDate() + dur);
+        document.getElementById('renewNextDate').value = d.toISOString().split('T')[0];
+      }
+    }
+
+    async function submitRenew(e) {
+      e.preventDefault();
+      const payload = {
+        action: 'updateRecord',
+        updateType: 'renew',
+        id: document.getElementById('renewRecordId').value,
+        branchId: document.getElementById('renewBranchId').value,
+        newRxNumber: document.getElementById('renewRxNumber').value.trim(),
+        newDispenseDate: document.getElementById('renewDispenseDate').value,
+        newDuration: document.getElementById('renewDuration').value,
+        newNextDate: document.getElementById('renewNextDate').value
+      };
+
+      closeRenewModal();
+      showLoader(true);
+      await apiCall(payload);
+      await loadRecords();
+    }
+
+    // تأجيل للغد
+    async function postponeTomorrow(id, branchId) {
+      if (!confirm('هل تريد تأجيل موعد التذكير بهذه الوصفة إلى الغد؟')) return;
+      showLoader(true);
+      await apiCall({
+        action: 'updateRecord',
+        updateType: 'postpone',
+        id: id,
+        branchId: branchId,
+        newNextDate: getTodayStr(1)
+      });
+      await loadRecords();
+    }
+
+    // جدول البحث السريع
+    function renderSearchTable() {
+      const q = document.getElementById('searchInput').value.trim().toLowerCase();
+      const tbody = document.getElementById('allRecordsTable');
+      const filtered = allRecords.filter(r => 
+        r.patientName.toLowerCase().includes(q) ||
+        r.nationalId.includes(q) ||
+        r.phone.includes(q) ||
+        r.rxNumber.toLowerCase().includes(q)
+      );
+
+      tbody.innerHTML = filtered.map(r => `
+        <tr class="hover:bg-gray-50">
+          <td class="p-3 font-bold">${r.patientName}</td>
+          <td class="p-3 select-all">${r.nationalId}</td>
+          <td class="p-3" dir="ltr">${r.phone}</td>
+          <td class="p-3 font-bold text-emerald-700 select-all">${r.rxNumber}</td>
+          <td class="p-3">${r.price} ر.س</td>
+          <td class="p-3 font-bold">${r.nextDate}</td>
+          <td class="p-3 text-xs text-gray-500">${r.branchName}</td>
+          <td class="p-3">
+            <button onclick="openRenewModal('${r.id}', '${r.branchId}', '${r.patientName}', '${r.rxNumber}', ${r.duration})" 
+                    class="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-3 py-1 rounded text-xs font-bold">
+              تجديد الصرف
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // التنقل بين التابات
+    function switchTab(tabName) {
+      ['followUp', 'addRx', 'searchAll'].forEach(t => {
+        document.getElementById('tab_' + t).classList.add('hidden');
+        document.getElementById('tabBtn_' + t).classList.remove('tab-active');
+        document.getElementById('tabBtn_' + t).classList.add('text-gray-500');
+      });
+      document.getElementById('tab_' + tabName).classList.remove('hidden');
+      document.getElementById('tabBtn_' + tabName).classList.add('tab-active');
+      document.getElementById('tabBtn_' + tabName).classList.remove('text-gray-500');
+    }
+
+    // استرجاع الجلسة لو مسجل دخول قبل كده
+    window.onload = () => {
+      const saved = localStorage.getItem('shams_vip_user');
+      if (saved) {
+        currentUser = JSON.parse(saved);
+        initApp();
+      }
+    };
+  </script>
+</body>
+</html>
