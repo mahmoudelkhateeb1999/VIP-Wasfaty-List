@@ -187,7 +187,7 @@
               </div>
               <div>
                 <label class="block text-xs font-bold text-emerald-900 mb-1">مدة الوصفة (بالأيام)</label>
-                <input type="number" id="rxDuration" value="30" min="1" max="365" onchange="calculateNextDate()" onkeyup="calculateNextDate()" required class="w-full px-3 py-2 border rounded-lg bg-white font-bold text-center">
+                <input type="number" id="rxDuration" value="30" min="0" max="365" onchange="calculateNextDate()" onkeyup="calculateNextDate()" required class="w-full px-3 py-2 border rounded-lg bg-white font-bold text-center">
               </div>
               <div>
                 <label class="block text-xs font-bold text-emerald-900 mb-1">موعد الصرف القادم (تلقائي)</label>
@@ -288,20 +288,55 @@
       document.getElementById('loader').classList.toggle('hidden', !show);
     }
 
+    // تحويل الأرقام العربية (١٢٣٤) إلى إنجليزية (1234) تلقائياً
+    function toEnglishDigits(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+        .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+    }
+
+    // ضبط صيغة رقم الجوال ليبدأ بـ 05 دائماً عند العرض والنسخ
+    function formatLocalPhone(phoneStr) {
+      let p = toEnglishDigits(phoneStr).replace(/\D/g, '');
+      if (p.length === 9 && p.startsWith('5')) {
+        return '0' + p;
+      }
+      if (p.startsWith('9665') && p.length === 12) {
+        return '0' + p.substring(3);
+      }
+      return p || toEnglishDigits(phoneStr);
+    }
+
+    // دالة ذكية لتوحيد صيغة التاريخ القادمة من جوجل شيت إلى YYYY-MM-DD
+    function normalizeDateStr(val) {
+      if (!val) return '';
+      const s = String(val).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      return s;
+    }
+
     // دالة النسخ السريع بضغطة واحدة مع إظهار إشعار للصيدلي
     function copyText(text, label) {
       if (!text) return;
-      navigator.clipboard.writeText(text).then(() => {
-        showCopyToast(`تم نسخ ${label}: ${text}`);
+      const cleanText = toEnglishDigits(text);
+      navigator.clipboard.writeText(cleanText).then(() => {
+        showCopyToast(`تم نسخ ${label}: ${cleanText}`);
       }).catch(() => {
-        // طريقة بديلة في حال كان المتصفح قديم
         const tempInput = document.createElement('input');
-        tempInput.value = text;
+        tempInput.value = cleanText;
         document.body.appendChild(tempInput);
         tempInput.select();
         document.execCommand('copy');
         document.body.removeChild(tempInput);
-        showCopyToast(`تم نسخ ${label}: ${text}`);
+        showCopyToast(`تم نسخ ${label}: ${cleanText}`);
       });
     }
 
@@ -336,8 +371,8 @@
     // 1. تسجيل الدخول
     async function handleLogin(e) {
       e.preventDefault();
-      const username = document.getElementById('loginUser').value.trim();
-      const pin = document.getElementById('loginPin').value.trim();
+      const username = toEnglishDigits(document.getElementById('loginUser').value.trim());
+      const pin = toEnglishDigits(document.getElementById('loginPin').value.trim());
       const errBox = document.getElementById('loginError');
       errBox.classList.add('hidden');
 
@@ -411,7 +446,14 @@
         });
         showLoader(false);
         if (data.success) {
-          allRecords = data.records || [];
+          allRecords = (data.records || []).map(r => ({
+            ...r,
+            nationalId: toEnglishDigits(r.nationalId),
+            phone: formatLocalPhone(r.phone),
+            rxNumber: toEnglishDigits(r.rxNumber),
+            dispenseDate: normalizeDateStr(r.dispenseDate),
+            nextDate: normalizeDateStr(r.nextDate)
+          }));
           renderFollowUp();
           renderSearchTable();
         }
@@ -423,7 +465,8 @@
 
     function calculateNextDate() {
       const disp = document.getElementById('rxDispenseDate').value;
-      const dur = parseInt(document.getElementById('rxDuration').value) || 30;
+      const durInput = document.getElementById('rxDuration').value;
+      const dur = durInput !== '' ? parseInt(durInput) : 30;
       if (disp) {
         const d = new Date(disp);
         d.setDate(d.getDate() + dur);
@@ -435,7 +478,7 @@
       const today = getTodayStr(0);
       const tomorrow = getTodayStr(1);
 
-      const todayRecs = allRecords.filter(r => r.nextDate <= today);
+      const todayRecs = allRecords.filter(r => r.nextDate && r.nextDate <= today);
       const tomorrowRecs = allRecords.filter(r => r.nextDate === tomorrow);
 
       document.getElementById('statToday').textContent = todayRecs.length;
@@ -458,9 +501,9 @@
         : '<p class="text-gray-400 text-sm col-span-2 text-center py-6">لا توجد وصفات مستحقة غداً</p>';
     }
 
-    // بناء كارت المريض مع أزرار النسخ السريع للهوية والوصفة
+    // بناء كارت المريض مع أزرار النسخ السريع لكل البيانات
     function createCardHTML(r, isToday) {
-      let cleanPhone = r.phone.replace(/\D/g, '');
+      let cleanPhone = toEnglishDigits(r.phone).replace(/\D/g, '');
       if (cleanPhone.startsWith('05')) cleanPhone = '966' + cleanPhone.substring(1);
       else if (cleanPhone.startsWith('5')) cleanPhone = '966' + cleanPhone;
 
@@ -474,7 +517,11 @@
           <div>
             <div class="flex justify-between items-start mb-2">
               <div>
-                <h3 class="font-extrabold text-base text-gray-800">${r.patientName}</h3>
+                <div class="flex items-center gap-2">
+                  <h3 class="font-extrabold text-base text-gray-800">${r.patientName}</h3>
+                  <button type="button" onclick="copyText('${r.patientName}', 'اسم المريض')" 
+                          class="text-gray-400 hover:text-emerald-600 text-xs transition" title="نسخ اسم المريض">📋</button>
+                </div>
                 <span class="text-xs text-gray-500 font-semibold">فرع: ${r.branchName}</span>
               </div>
               <span class="bg-emerald-100 text-emerald-800 text-xs font-extrabold px-2.5 py-1 rounded-full">
@@ -483,24 +530,38 @@
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-700 my-3 bg-white p-2.5 rounded-lg border">
+              <!-- رقم الهوية -->
               <div class="flex items-center justify-between bg-gray-50 px-2 py-1.5 rounded border border-gray-100">
                 <div><span class="text-gray-400">الهوية:</span> <strong class="font-mono text-sm">${r.nationalId}</strong></div>
                 <button type="button" onclick="copyText('${r.nationalId}', 'رقم الهوية')" 
-                        class="bg-gray-200 hover:bg-emerald-600 hover:text-white text-gray-700 px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1" title="نسخ رقم الهوية">
+                        class="bg-gray-200 hover:bg-emerald-600 hover:text-white text-gray-700 px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1">
                   📋 نسخ
                 </button>
               </div>
 
+              <!-- رقم الوصفة -->
               <div class="flex items-center justify-between bg-emerald-50/60 px-2 py-1.5 rounded border border-emerald-100">
                 <div><span class="text-gray-400">الوصفة:</span> <strong class="font-mono text-sm text-emerald-700">${r.rxNumber}</strong></div>
                 <button type="button" onclick="copyText('${r.rxNumber}', 'رقم الوصفة')" 
-                        class="bg-emerald-100 hover:bg-emerald-600 hover:text-white text-emerald-800 px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1" title="نسخ رقم الوصفة">
+                        class="bg-emerald-100 hover:bg-emerald-600 hover:text-white text-emerald-800 px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1">
                   📋 نسخ
                 </button>
               </div>
 
-              <div class="px-1 pt-1"><span class="text-gray-400">الجوال:</span> <strong dir="ltr">${r.phone}</strong></div>
-              <div class="px-1 pt-1"><span class="text-gray-400">الموعد:</span> <strong class="${isLate ? 'text-red-600' : ''}">${r.nextDate} ${isLate ? '(متأخر)' : ''}</strong></div>
+              <!-- رقم الجوال -->
+              <div class="flex items-center justify-between bg-gray-50 px-2 py-1.5 rounded border border-gray-100">
+                <div><span class="text-gray-400">الجوال:</span> <strong class="font-mono text-sm" dir="ltr">${r.phone}</strong></div>
+                <button type="button" onclick="copyText('${r.phone}', 'رقم الجوال')" 
+                        class="bg-gray-200 hover:bg-emerald-600 hover:text-white text-gray-700 px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1">
+                  📋 نسخ
+                </button>
+              </div>
+
+              <!-- الموعد القادم -->
+              <div class="flex items-center justify-between bg-gray-50 px-2 py-1.5 rounded border border-gray-100">
+                <div><span class="text-gray-400">الموعد:</span> <strong class="font-mono ${isLate ? 'text-red-600' : ''}">${r.nextDate}</strong></div>
+                ${isLate ? '<span class="text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded">متأخر</span>' : ''}
+              </div>
             </div>
             ${r.notes ? `<p class="text-xs text-amber-800 bg-amber-50 p-2 rounded mb-3">📝 <strong>ملاحظة:</strong> ${r.notes}</p>` : ''}
           </div>
@@ -533,12 +594,12 @@
         action: 'addRecord',
         branchId: branchId,
         patientName: document.getElementById('rxPatientName').value.trim(),
-        nationalId: document.getElementById('rxNationalId').value.trim(),
-        phone: document.getElementById('rxPhone').value.trim(),
-        rxNumber: document.getElementById('rxNumber').value.trim(),
-        price: document.getElementById('rxPrice').value.trim(),
+        nationalId: toEnglishDigits(document.getElementById('rxNationalId').value.trim()),
+        phone: formatLocalPhone(document.getElementById('rxPhone').value.trim()),
+        rxNumber: toEnglishDigits(document.getElementById('rxNumber').value.trim()),
+        price: toEnglishDigits(document.getElementById('rxPrice').value.trim()),
         dispenseDate: document.getElementById('rxDispenseDate').value,
-        duration: document.getElementById('rxDuration').value,
+        duration: toEnglishDigits(document.getElementById('rxDuration').value),
         nextDate: document.getElementById('rxNextDate').value,
         notes: document.getElementById('rxNotes').value.trim()
       };
@@ -597,9 +658,9 @@
         updateType: 'renew',
         id: document.getElementById('renewRecordId').value,
         branchId: document.getElementById('renewBranchId').value,
-        newRxNumber: document.getElementById('renewRxNumber').value.trim(),
+        newRxNumber: toEnglishDigits(document.getElementById('renewRxNumber').value.trim()),
         newDispenseDate: document.getElementById('renewDispenseDate').value,
-        newDuration: document.getElementById('renewDuration').value,
+        newDuration: toEnglishDigits(document.getElementById('renewDuration').value),
         newNextDate: document.getElementById('renewNextDate').value
       };
 
@@ -622,9 +683,9 @@
       await loadRecords();
     }
 
-    // جدول البحث السريع مع أزرار النسخ
+    // جدول البحث السريع مع أزرار النسخ للهوية والوصفة والجوال والاسم
     function renderSearchTable() {
-      const q = document.getElementById('searchInput').value.trim().toLowerCase();
+      const q = toEnglishDigits(document.getElementById('searchInput').value.trim().toLowerCase());
       const tbody = document.getElementById('allRecordsTable');
       const filtered = allRecords.filter(r => 
         r.patientName.toLowerCase().includes(q) ||
@@ -635,22 +696,32 @@
 
       tbody.innerHTML = filtered.map(r => `
         <tr class="hover:bg-gray-50">
-          <td class="p-3 font-bold">${r.patientName}</td>
+          <td class="p-3 font-bold">
+            <div class="flex items-center gap-1.5">
+              <span>${r.patientName}</span>
+              <button onclick="copyText('${r.patientName}', 'اسم المريض')" class="bg-gray-100 hover:bg-emerald-600 hover:text-white text-gray-600 px-1.5 py-0.5 rounded text-xs transition" title="نسخ الاسم">📋</button>
+            </div>
+          </td>
           <td class="p-3">
             <div class="flex items-center gap-1.5">
               <span class="font-mono">${r.nationalId}</span>
-              <button onclick="copyText('${r.nationalId}', 'رقم الهوية')" class="bg-gray-100 hover:bg-emerald-600 hover:text-white text-gray-600 px-1.5 py-0.5 rounded text-xs transition" title="نسخ الهوية">📋</button>
+              <button onclick="copyText('${r.nationalId}', 'رقم الهوية')" class="bg-gray-100 hover:bg-emerald-600 hover:text-white text-gray-600 px-2 py-0.5 rounded text-xs font-bold transition" title="نسخ الهوية">📋 نسخ</button>
             </div>
           </td>
-          <td class="p-3" dir="ltr">${r.phone}</td>
+          <td class="p-3">
+            <div class="flex items-center gap-1.5">
+              <span class="font-mono" dir="ltr">${r.phone}</span>
+              <button onclick="copyText('${r.phone}', 'رقم الجوال')" class="bg-gray-100 hover:bg-emerald-600 hover:text-white text-gray-600 px-2 py-0.5 rounded text-xs font-bold transition" title="نسخ الجوال">📋 نسخ</button>
+            </div>
+          </td>
           <td class="p-3">
             <div class="flex items-center gap-1.5">
               <span class="font-mono font-bold text-emerald-700">${r.rxNumber}</span>
-              <button onclick="copyText('${r.rxNumber}', 'رقم الوصفة')" class="bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 px-1.5 py-0.5 rounded text-xs transition" title="نسخ الوصفة">📋</button>
+              <button onclick="copyText('${r.rxNumber}', 'رقم الوصفة')" class="bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 px-2 py-0.5 rounded text-xs font-bold transition" title="نسخ الوصفة">📋 نسخ</button>
             </div>
           </td>
           <td class="p-3">${r.price} ر.س</td>
-          <td class="p-3 font-bold">${r.nextDate}</td>
+          <td class="p-3 font-bold text-emerald-800">${r.nextDate}</td>
           <td class="p-3 text-xs text-gray-500">${r.branchName}</td>
           <td class="p-3">
             <button onclick="openRenewModal('${r.id}', '${r.branchId}', '${r.patientName}', '${r.rxNumber}', ${r.duration})" 
