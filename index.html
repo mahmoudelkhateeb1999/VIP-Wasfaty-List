@@ -3,18 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>نظام VIP وصفتي - صيدليات شمس</title>
+  <title>رادار VIP وصفتي - صيدليات شمس</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Cairo', sans-serif; background-color: #f3f4f6; }
-    .tab-active { border-bottom: 3px solid #059669; color: #059669; font-weight: 700; }
+    .tab-active { border-bottom: 3px solid #059669; color: #059669; font-weight: 800; }
+    @keyframes pulse-fast {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+      50% { transform: scale(1.02); box-shadow: 0 0 0 12px rgba(220, 38, 38, 0); }
+    }
+    .alarm-pulse { animation: pulse-fast 1.2s infinite; }
   </style>
 </head>
 <body class="min-h-screen text-gray-800">
 
   <!-- إشعار النسخ السريع (Toast Notification) -->
-  <div id="copyToast" class="fixed top-5 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-5 py-2.5 rounded-full shadow-xl z-50 hidden flex items-center gap-2 text-sm font-bold transition-all">
+  <div id="copyToast" class="fixed top-5 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl z-[60] hidden flex items-center gap-2 text-sm font-bold transition-all">
     <span>✅</span>
     <span id="copyToastMsg">تم النسخ بنجاح!</span>
   </div>
@@ -23,7 +28,43 @@
   <div id="loader" class="fixed inset-0 bg-black bg-opacity-40 z-50 hidden flex items-center justify-center">
     <div class="bg-white p-5 rounded-xl shadow-lg flex items-center gap-3">
       <div class="w-6 h-6 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-      <span class="font-bold text-gray-700">جاري معالجة البيانات...</span>
+      <span class="font-bold text-gray-700">جاري مزامنة البيانات...</span>
+    </div>
+  </div>
+
+  <!-- 🚨 نافذة الإنذار الصوتي قبل الموعد بـ 3 دقائق (Alarm Modal) -->
+  <div id="alarmModal" class="fixed inset-0 bg-red-950 bg-opacity-80 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border-4 border-red-600 alarm-pulse">
+      <div class="flex justify-between items-center border-b pb-3 mb-4">
+        <div class="flex items-center gap-2">
+          <span class="text-3xl animate-bounce">🚨</span>
+          <div>
+            <h2 class="text-xl font-black text-red-700">تنبيه فتح وصفة VIP!</h2>
+            <p class="text-xs text-gray-500 font-bold">استعد للدخول على منصة وصفتي الآن</p>
+          </div>
+        </div>
+        <!-- العداد التنازلي بالثواني -->
+        <div class="bg-red-600 text-white px-4 py-2 rounded-2xl text-center shadow">
+          <span class="block text-[10px] font-bold opacity-80">الوقت المتبقي</span>
+          <span id="alarmCountdown" class="font-mono text-2xl font-black tracking-wider" dir="ltr">03:00</span>
+        </div>
+      </div>
+
+      <!-- بيانات المريض والنسخ السريع للسباق -->
+      <div id="alarmPatientInfo" class="space-y-3 mb-5"></div>
+
+      <!-- أزرار التحكم في الإنذار -->
+      <div class="flex flex-wrap gap-2 pt-3 border-t">
+        <button onclick="acknowledgeAlarm()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 px-4 rounded-xl shadow-lg transition text-sm">
+          🔕 انتبهت (إيقاف الصوت فقط)
+        </button>
+        <button id="alarmSnooze15Btn" class="bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold py-3 px-3 rounded-xl text-xs transition">
+          ⏳ تأجيل 15 د
+        </button>
+        <button id="alarmRenewBtn" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3 px-4 rounded-xl text-xs transition">
+          ✅ تم الصرف
+        </button>
+      </div>
     </div>
   </div>
 
@@ -35,7 +76,7 @@
           ☀️
         </div>
         <h1 class="text-2xl font-extrabold text-gray-800">صيدليات شمس</h1>
-        <p class="text-sm text-gray-500 mt-1">نظام متابعة عملاء VIP وصفتي</p>
+        <p class="text-sm text-gray-500 mt-1">رادار متابعة عملاء VIP وصفتي (بالساعة والدقيقة)</p>
       </div>
 
       <form onsubmit="handleLogin(event)" class="space-y-4">
@@ -65,8 +106,14 @@
         <div class="flex items-center gap-2">
           <span class="text-2xl">☀️</span>
           <div>
-            <h1 class="font-extrabold text-lg text-emerald-800 leading-tight">نظام VIP وصفتي - شمس <span class="text-[11px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">v2.1</span></h1>
-            <p id="branchBadge" class="text-xs text-gray-500 font-semibold"></p>
+            <div class="flex items-center gap-2">
+              <h1 class="font-extrabold text-lg text-emerald-800 leading-tight">رادار VIP وصفتي - شمس</h1>
+              <span class="text-[11px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">v3.0</span>
+            </div>
+            <div class="flex items-center gap-3 mt-0.5">
+              <p id="branchBadge" class="text-xs text-gray-500 font-semibold"></p>
+              <span id="liveClock" class="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200" dir="ltr"></span>
+            </div>
           </div>
         </div>
 
@@ -78,11 +125,17 @@
           </select>
         </div>
 
-        <div class="flex items-center gap-2">
-          <button onclick="loadRecords()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-bold transition">
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- زر تفعيل الرادار الصوتي -->
+          <button id="radarBtn" onclick="enableAudioRadar()" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-extrabold shadow-sm transition flex items-center gap-1.5">
+            <span>🔇</span>
+            <span id="radarBtnText">تفعيل الرادار الصوتي + تجربة الصوت</span>
+          </button>
+
+          <button onclick="loadRecords()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold transition">
             🔄 تحديث
           </button>
-          <button onclick="logout()" class="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-sm font-bold transition">
+          <button onclick="logout()" class="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-xs font-bold transition">
             خروج
           </button>
         </div>
@@ -91,7 +144,7 @@
       <!-- شريط التنقل (Tabs) -->
       <div class="max-w-6xl mx-auto px-4 flex gap-6 border-t overflow-x-auto">
         <button onclick="switchTab('followUp')" id="tabBtn_followUp" class="py-3 px-2 text-sm font-semibold whitespace-nowrap tab-active">
-          📅 متابعة اليوم والغد <span id="badgeCount" class="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full mr-1">0</span>
+          📅 رادار اليوم والغد <span id="badgeCount" class="bg-red-600 text-white text-xs px-2 py-0.5 rounded-full mr-1">0</span>
         </button>
         <button onclick="switchTab('addRx')" id="tabBtn_addRx" class="py-3 px-2 text-sm font-semibold text-gray-500 whitespace-nowrap">
           ➕ تسجيل وصفة VIP جديدة
@@ -126,11 +179,14 @@
           </div>
         </div>
 
-        <!-- 1. قسم وصفات اليوم -->
+        <!-- 1. قسم وصفات اليوم (مرتبة بالساعة والدقيقة) -->
         <div class="bg-white rounded-xl shadow-sm p-4 border border-emerald-200">
-          <h2 class="text-lg font-extrabold text-emerald-800 mb-3 flex items-center gap-2">
-            <span>🔔</span> وصفات مستحقة للصرف اليوم (أو متأخرة لم تُصرف)
-          </h2>
+          <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
+            <h2 class="text-lg font-extrabold text-emerald-800 flex items-center gap-2">
+              <span>🔔</span> وصفات مستحقة اليوم (مرتبة حسب الأقرب في الساعة والدقيقة)
+            </h2>
+            <span class="text-xs text-gray-500 font-semibold">ينطلق جرس التنبيه تلقائياً قبل الموعد بـ 3 دقائق</span>
+          </div>
           <div id="todayList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
         </div>
 
@@ -142,7 +198,7 @@
           <div id="tomorrowList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
         </div>
 
-        <!-- 3. قسم الوصفات القادمة المجدولة (بعد الغد) -->
+        <!-- 3. قسم الوصفات القادمة المجدولة -->
         <div class="bg-white rounded-xl shadow-sm p-4 border border-blue-200">
           <h2 class="text-lg font-extrabold text-blue-800 mb-3 flex items-center gap-2">
             <span>🗓️</span> وصفات مجدولة للأيام القادمة
@@ -154,7 +210,12 @@
       <!-- ب. واجهة تسجيل وصفة جديدة -->
       <section id="tab_addRx" class="hidden max-w-2xl mx-auto">
         <div class="bg-white rounded-xl shadow-sm p-6 border">
-          <h2 class="text-xl font-extrabold text-gray-800 mb-4 border-b pb-2">تسجيل وصفة VIP جديدة (+70 ريال)</h2>
+          <div class="flex justify-between items-center mb-4 border-b pb-2">
+            <h2 class="text-xl font-extrabold text-gray-800">تسجيل وصفة VIP جديدة (+70 ريال)</h2>
+            <button type="button" onclick="setFormTimeNow()" class="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-3 py-1.5 rounded-lg border border-emerald-200">
+              ⌚ ضبط على اللحظة الحالية
+            </button>
+          </div>
           
           <form id="addRxForm" onsubmit="handleAddRx(event)" class="space-y-4">
             <div id="adminAddBranchSelectDiv" class="hidden">
@@ -188,18 +249,32 @@
               </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-emerald-50 p-3 rounded-lg border border-emerald-200">
-              <div>
-                <label class="block text-xs font-bold text-emerald-900 mb-1">تاريخ الصرف الفعلي</label>
-                <input type="date" id="rxDispenseDate" onchange="calculateNextDate()" required class="w-full px-3 py-2 border rounded-lg bg-white">
+            <!-- قسم التوقيت الدقيق بالساعة والدقيقة -->
+            <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-200 space-y-3">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label class="block text-xs font-bold text-emerald-900 mb-1">تاريخ الصرف الفعلي</label>
+                  <input type="date" id="rxDispenseDate" onchange="calculateNextDate()" required class="w-full px-3 py-2 border rounded-lg bg-white font-mono text-sm">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-emerald-900 mb-1">وقت الصرف (الساعة والدقيقة)</label>
+                  <input type="time" id="rxDispenseTime" onchange="calculateNextDate()" required class="w-full px-3 py-2 border rounded-lg bg-white font-mono text-sm font-bold text-emerald-800">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-emerald-900 mb-1">مدة الوصفة (بالأيام)</label>
+                  <input type="number" id="rxDuration" value="30" min="0" max="365" onchange="calculateNextDate()" onkeyup="calculateNextDate()" required class="w-full px-3 py-2 border rounded-lg bg-white font-bold text-center">
+                </div>
               </div>
-              <div>
-                <label class="block text-xs font-bold text-emerald-900 mb-1">مدة الوصفة (بالأيام)</label>
-                <input type="number" id="rxDuration" value="30" min="0" max="365" onchange="calculateNextDate()" onkeyup="calculateNextDate()" required class="w-full px-3 py-2 border rounded-lg bg-white font-bold text-center">
-              </div>
-              <div>
-                <label class="block text-xs font-bold text-emerald-900 mb-1">موعد الصرف القادم (تلقائي)</label>
-                <input type="date" id="rxNextDate" required class="w-full px-3 py-2 border rounded-lg bg-gray-100 font-bold text-emerald-800">
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-emerald-200/60">
+                <div>
+                  <label class="block text-xs font-bold text-emerald-900 mb-1">تاريخ الصرف القادم (تلقائي)</label>
+                  <input type="date" id="rxNextDate" required class="w-full px-3 py-2 border rounded-lg bg-white font-mono font-bold text-emerald-800 text-sm">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-emerald-900 mb-1">موعد فتح الوصفة القادم (بالدقيقة)</label>
+                  <input type="time" id="rxNextTime" required class="w-full px-3 py-2 border rounded-lg bg-white font-mono font-bold text-red-600 text-sm">
+                </div>
               </div>
             </div>
 
@@ -209,7 +284,7 @@
             </div>
 
             <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow transition text-lg">
-              💾 حفظ وتسجيل الوصفة
+              💾 حفظ وجدولة في الرادار
             </button>
           </form>
         </div>
@@ -233,7 +308,7 @@
                   <th class="p-3">الجوال</th>
                   <th class="p-3">رقم الوصفة</th>
                   <th class="p-3">السعر</th>
-                  <th class="p-3">الموعد القادم</th>
+                  <th class="p-3">الموعد القادم (التاريخ والوقت)</th>
                   <th class="p-3">الفرع</th>
                   <th class="p-3">إجراءات</th>
                 </tr>
@@ -250,7 +325,7 @@
   <!-- نافذة (Modal) تجديد الصرف -->
   <div id="renewModal" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl">
-      <h3 class="text-lg font-extrabold text-gray-800 mb-2">✅ تأكيد صرف وتجديد الوصفة</h3>
+      <h3 class="text-lg font-extrabold text-gray-800 mb-1">✅ تأكيد صرف وتجديد الوصفة</h3>
       <p id="renewModalPatient" class="text-sm text-emerald-700 font-bold mb-4"></p>
       
       <form onsubmit="submitRenew(event)" class="space-y-3">
@@ -258,21 +333,31 @@
         <input type="hidden" id="renewBranchId">
         <div>
           <label class="block text-xs font-bold text-gray-700 mb-1">رقم الوصفة الجديدة (أو اتركه كما هو)</label>
-          <input type="text" id="renewRxNumber" required class="w-full px-3 py-2 border rounded-lg font-bold">
+          <input type="text" id="renewRxNumber" required class="w-full px-3 py-2 border rounded-lg font-bold font-mono">
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-bold text-gray-700 mb-1">تاريخ الصرف اليوم</label>
-            <input type="date" id="renewDispenseDate" onchange="calcRenewNextDate()" required class="w-full px-3 py-2 border rounded-lg">
+            <label class="block text-xs font-bold text-gray-700 mb-1">تاريخ الصرف</label>
+            <input type="date" id="renewDispenseDate" onchange="calcRenewNextDate()" required class="w-full px-3 py-2 border rounded-lg font-mono text-sm">
           </div>
           <div>
-            <label class="block text-xs font-bold text-gray-700 mb-1">المدة القادمة (أيام)</label>
-            <input type="number" id="renewDuration" value="30" onchange="calcRenewNextDate()" onkeyup="calcRenewNextDate()" required class="w-full px-3 py-2 border rounded-lg text-center font-bold">
+            <label class="block text-xs font-bold text-gray-700 mb-1">ساعة الصرف الفعلي</label>
+            <input type="time" id="renewDispenseTime" onchange="calcRenewNextDate()" required class="w-full px-3 py-2 border rounded-lg font-mono text-sm font-bold">
           </div>
         </div>
-        <div>
-          <label class="block text-xs font-bold text-gray-700 mb-1">الموعد القادم الجديد</label>
-          <input type="date" id="renewNextDate" required class="w-full px-3 py-2 border rounded-lg bg-emerald-50 font-bold text-emerald-800">
+        <div class="grid grid-cols-3 gap-2 bg-emerald-50 p-3 rounded-lg border border-emerald-200">
+          <div>
+            <label class="block text-[11px] font-bold text-emerald-900 mb-1">المدة (أيام)</label>
+            <input type="number" id="renewDuration" value="30" onchange="calcRenewNextDate()" onkeyup="calcRenewNextDate()" required class="w-full px-2 py-1.5 border rounded-lg text-center font-bold bg-white">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-emerald-900 mb-1">التاريخ القادم</label>
+            <input type="date" id="renewNextDate" required class="w-full px-2 py-1.5 border rounded-lg bg-white font-mono text-xs font-bold text-emerald-800">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-emerald-900 mb-1">الساعة القادمة</label>
+            <input type="time" id="renewNextTime" required class="w-full px-2 py-1.5 border rounded-lg bg-white font-mono text-xs font-bold text-red-600">
+          </div>
         </div>
         <div class="flex gap-2 pt-3">
           <button type="submit" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg">تأكيد التجديد</button>
@@ -292,11 +377,18 @@
     let allRecords = [];
     let toastTimeout = null;
 
+    // متغيرات الرادار الصوتي والإنذار
+    let audioCtx = null;
+    let radarEnabled = false;
+    let alarmBeepInterval = null;
+    let activeAlarmRecordId = null;
+    let acknowledgedAlarms = JSON.parse(localStorage.getItem('shams_ack_alarms') || '{}');
+
     function showLoader(show) {
       document.getElementById('loader').classList.toggle('hidden', !show);
     }
 
-    // تحويل الأرقام العربية (١٢٣٤) إلى إنجليزية (1234) تلقائياً
+    // تحويل الأرقام العربية (١٢٣٤) إلى إنجليزية (1234)
     function toEnglishDigits(str) {
       if (!str) return '';
       return String(str)
@@ -304,55 +396,305 @@
         .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
     }
 
-    // ضبط صيغة رقم الجوال ليبدأ بـ 05 دائماً عند العرض والنسخ
+    // ضبط صيغة رقم الجوال ليبدأ بـ 05 دائماً
     function formatLocalPhone(phoneStr) {
       let p = toEnglishDigits(phoneStr).replace(/\D/g, '');
-      if (p.length === 9 && p.startsWith('5')) {
-        return '0' + p;
-      }
-      if (p.startsWith('9665') && p.length === 12) {
-        return '0' + p.substring(3);
-      }
+      if (p.length === 9 && p.startsWith('5')) return '0' + p;
+      if (p.startsWith('9665') && p.length === 12) return '0' + p.substring(3);
       return p || toEnglishDigits(phoneStr);
     }
 
-    // دالة جذرية لتحويل أي صيغة تاريخ (بما فيها المقطوعة بـ GM من جوجل شيت) إلى YYYY-MM-DD
-    function normalizeDateStr(val) {
-      if (!val) return '';
-      const s = String(val).trim();
-      
-      // 1. إذا كان جاهزاً بصيغة 2026-10-26
-      const isoMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-      if (isoMatch) {
-        return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+    // الحصول على تاريخ اليوم أو الوقت الحالي
+    function getTodayStr(offsetDays = 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function getCurrentTimeStr() {
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      return `${hh}:${min}`;
+    }
+
+    // تحويل وقت 24 ساعة (14:30) إلى صيغة 12 ساعة مقروءة (02:30 م)
+    function formatTime12Ar(time24) {
+      if (!time24) return '09:00 ص';
+      const parts = time24.split(':');
+      let h = parseInt(parts[0], 10);
+      const m = parts[1] || '00';
+      if (isNaN(h)) return time24;
+      const period = h >= 12 ? 'م' : 'ص';
+      h = h % 12 || 12;
+      return `${String(h).padStart(2, '0')}:${m} ${period}`;
+    }
+
+    // استخراج التاريخ (YYYY-MM-DD) والوقت (HH:mm) من أي نص قادم من جوجل شيت
+    function parseDateTimeFromSheet(val, notesStr = '') {
+      let datePart = '';
+      let timePart = '';
+
+      const s = String(val || '').replace(/^'/, '').trim();
+
+      // 1. البحث عن وقت بصيغة HH:mm داخل حقل التاريخ نفسه (إذا لم يكن 00:00:00 الافتراضي لـ GM)
+      const timeMatchInVal = s.match(/(\d{1,2}):(\d{2})/);
+      if (timeMatchInVal && !s.includes('00:00:00')) {
+        timePart = `${String(timeMatchInVal[1]).padStart(2, '0')}:${timeMatchInVal[2]}`;
       }
 
-      // 2. إذا كان بصيغة جوجل شيت النصية: Mon Oct 26 2026 00:00:00 GM
+      // 2. البحث عن وقت مخزن في الملاحظات الاحتياطية [⏰14:30]
+      if (!timePart && notesStr) {
+        const noteTimeMatch = String(notesStr).match(/\[⏰(\d{2}:\d{2})\]/);
+        if (noteTimeMatch) timePart = noteTimeMatch[1];
+      }
+
+      // إذا لم يوجد وقت (للسجلات القديمة)، نضع وقت افتراضي 09:00 صباحاً
+      if (!timePart) timePart = '09:00';
+
+      // استخراج التاريخ
+      const isoMatch = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (isoMatch) {
+        datePart = `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+        return { datePart, timePart };
+      }
+
       const months = {
         Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
         Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12'
       };
       const gSheetMatch = s.match(/([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})/);
       if (gSheetMatch && months[gSheetMatch[1]]) {
-        const mm = months[gSheetMatch[1]];
-        const dd = String(gSheetMatch[2]).padStart(2, '0');
-        const yyyy = gSheetMatch[3];
-        return `${yyyy}-${mm}-${dd}`;
+        datePart = `${gSheetMatch[3]}-${months[gSheetMatch[1]]}-${String(gSheetMatch[2]).padStart(2, '0')}`;
+        return { datePart, timePart };
       }
 
-      // 3. محاولة أخيرة عبر Date بعد إزالة كلمة GM المقطوعة
       const cleaned = s.replace(/\s*GM.*$/, '');
       const d = new Date(cleaned);
       if (!isNaN(d.getTime())) {
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
+        datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return { datePart, timePart };
       }
-      return s;
+
+      return { datePart: s, timePart };
     }
 
-    // دالة النسخ السريع بضغطة واحدة مع إظهار إشعار للصيدلي
+    // تحويل التاريخ والوقت إلى Timestamp بالميلي ثانية للمقارنة والترتيب
+    function getTimestamp(dateStr, timeStr) {
+      if (!dateStr) return Infinity;
+      const t = timeStr || '09:00';
+      const dt = new Date(`${dateStr}T${t}:00`);
+      return isNaN(dt.getTime()) ? Infinity : dt.getTime();
+    }
+
+    // =========================================================
+    // 🔊 نظام الرادار الصوتي والإنذار قبل الموعد بـ 3 دقائق
+    // =========================================================
+    function enableAudioRadar() {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        radarEnabled = true;
+        playBeepPattern(false); // نغمة تجربة سريعة
+
+        const btn = document.getElementById('radarBtn');
+        btn.className = 'bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-extrabold shadow-sm transition flex items-center gap-1.5';
+        btn.innerHTML = '<span>🔊</span><span>الرادار الصوتي مفعل (شغال)</span>';
+
+        // طلب صلاحية إشعارات سطح المكتب
+        if ('Notification' in window && Notification.permission !== 'granted') {
+          Notification.requestPermission();
+        }
+
+        showCopyToast('🔊 تم تفعيل الرادار الصوتي بنجاح! سينبهك قبل أي وصفة بـ 3 دقائق');
+      } catch (e) {
+        alert('تعذر تفعيل الصوت في المتصفح');
+      }
+    }
+
+    function playBeepPattern(isUrgent = true) {
+      if (!audioCtx) return;
+      try {
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (isUrgent) {
+          // نغمة إنذار قوية ثلاثية
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(880, now);
+          osc.frequency.setValueAtTime(1046.5, now + 0.18);
+          osc.frequency.setValueAtTime(880, now + 0.36);
+          gain.gain.setValueAtTime(0.35, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+          osc.start(now);
+          osc.stop(now + 0.62);
+        } else {
+          // نغمة تفعيل لطيفة
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(587.33, now);
+          osc.frequency.setValueAtTime(880, now + 0.15);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+          osc.start(now);
+          osc.stop(now + 0.36);
+        }
+      } catch (e) {}
+    }
+
+    function triggerAlarmModal(record) {
+      activeAlarmRecordId = record.id;
+      const modal = document.getElementById('alarmModal');
+      const infoBox = document.getElementById('alarmPatientInfo');
+
+      infoBox.innerHTML = `
+        <div class="bg-red-50 p-4 rounded-2xl border border-red-200 space-y-3">
+          <div class="flex justify-between items-center">
+            <div>
+              <span class="text-xs text-gray-500 font-bold">اسم المريض:</span>
+              <h3 class="text-lg font-black text-gray-900">${record.patientName}</h3>
+            </div>
+            <span class="bg-emerald-100 text-emerald-800 text-sm font-black px-3 py-1 rounded-full">${record.price} ر.س</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+            <div class="bg-white p-2.5 rounded-xl border border-gray-200 flex justify-between items-center">
+              <div>
+                <span class="block text-[10px] text-gray-400 font-bold">رقم الهوية</span>
+                <strong class="font-mono text-base text-gray-900">${record.nationalId}</strong>
+              </div>
+              <button onclick="copyText('${record.nationalId}', 'رقم الهوية')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-extrabold shadow">
+                📋 نسخ الهوية
+              </button>
+            </div>
+
+            <div class="bg-white p-2.5 rounded-xl border border-emerald-200 flex justify-between items-center">
+              <div>
+                <span class="block text-[10px] text-gray-400 font-bold">رقم الوصفة</span>
+                <strong class="font-mono text-base text-emerald-700">${record.rxNumber}</strong>
+              </div>
+              <button onclick="copyText('${record.rxNumber}', 'رقم الوصفة')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-extrabold shadow">
+                📋 نسخ الوصفة
+              </button>
+            </div>
+          </div>
+
+          <div class="flex justify-between items-center text-xs text-gray-600 pt-1">
+            <span>📞 الجوال: <strong class="font-mono" dir="ltr">${record.phone}</strong></span>
+            <span>⏰ موعد الفتح: <strong class="font-mono text-red-700">${formatTime12Ar(record.nextTime)}</strong></span>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('alarmSnooze15Btn').onclick = () => {
+        acknowledgeAlarm();
+        snoozeRecordMinutes(record.id, record.branchId, 15);
+      };
+
+      document.getElementById('alarmRenewBtn').onclick = () => {
+        acknowledgeAlarm();
+        openRenewModal(record.id, record.branchId, record.patientName, record.rxNumber, record.duration);
+      };
+
+      modal.classList.remove('hidden');
+
+      // تشغيل الجرس المتكرر كل ثانيتين حتى يضغط الصيدلي إيقاف
+      if (!alarmBeepInterval) {
+        playBeepPattern(true);
+        alarmBeepInterval = setInterval(() => {
+          if (radarEnabled) playBeepPattern(true);
+        }, 2200);
+      }
+
+      // إرسال إشعار سطح مكتب (Desktop Notification)
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('🚨 تنبيه VIP وصفتي - صيدليات شمس', {
+          body: `تبقى أقل من 3 دقائق على وصفة المريض: ${record.patientName} (رقم الوصفة: ${record.rxNumber})`,
+          requireInteraction: true
+        });
+      }
+    }
+
+    function acknowledgeAlarm() {
+      if (activeAlarmRecordId) {
+        const rec = allRecords.find(r => r.id === activeAlarmRecordId);
+        if (rec) {
+          acknowledgedAlarms[`${rec.id}_${rec.nextDate}_${rec.nextTime}`] = true;
+          localStorage.setItem('shams_ack_alarms', JSON.stringify(acknowledgedAlarms));
+        }
+      }
+      activeAlarmRecordId = null;
+      document.getElementById('alarmModal').classList.add('hidden');
+      if (alarmBeepInterval) {
+        clearInterval(alarmBeepInterval);
+        alarmBeepInterval = null;
+      }
+    }
+
+    // فحص الرادار كل ثانية لتحديث الساعة والعداد التنازلي وفحص الـ 3 دقائق
+    setInterval(() => {
+      const now = new Date();
+      const clockEl = document.getElementById('liveClock');
+      if (clockEl) {
+        clockEl.textContent = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      }
+
+      if (!currentUser || !allRecords.length) return;
+
+      const nowMs = now.getTime();
+
+      // تحديث العداد التنازلي إذا كانت نافذة الإنذار مفتوحة
+      if (activeAlarmRecordId) {
+        const activeRec = allRecords.find(r => r.id === activeAlarmRecordId);
+        if (activeRec) {
+          const targetMs = getTimestamp(activeRec.nextDate, activeRec.nextTime);
+          const diffSec = Math.floor((targetMs - nowMs) / 1000);
+          const cdEl = document.getElementById('alarmCountdown');
+          if (diffSec > 0) {
+            const m = String(Math.floor(diffSec / 60)).padStart(2, '0');
+            const s = String(diffSec % 60).padStart(2, '0');
+            cdEl.textContent = `${m}:${s}`;
+          } else {
+            cdEl.textContent = 'متاح الآن!';
+          }
+        }
+      }
+
+      // البحث عن أي وصفة يحين موعدها خلال 3 دقائق (180 ثانية) وحتى 10 دقائق بعد الموعد
+      for (const r of allRecords) {
+        const key = `${r.id}_${r.nextDate}_${r.nextTime}`;
+        if (acknowledgedAlarms[key]) continue;
+
+        const targetMs = getTimestamp(r.nextDate, r.nextTime);
+        const diffSec = (targetMs - nowMs) / 1000;
+
+        // إذا تبقى 180 ثانية (3 دقائق) أو أقل (وحتى -600 ثانية أي مضى عليها أقل من 10 دقائق)
+        if (diffSec <= 180 && diffSec >= -600) {
+          if (!activeAlarmRecordId) {
+            triggerAlarmModal(r);
+          }
+          break;
+        }
+      }
+    }, 1000);
+
+    // تحديث شارات الوقت المتبقي على الكروت كل 30 ثانية
+    setInterval(() => {
+      if (currentUser && allRecords.length) {
+        renderFollowUp();
+      }
+    }, 30000);
+
+    // دالة النسخ السريع بضغطة واحدة
     function copyText(text, label) {
       if (!text) return;
       const cleanText = toEnglishDigits(text);
@@ -377,15 +719,6 @@
       toastTimeout = setTimeout(() => {
         toast.classList.add('hidden');
       }, 2200);
-    }
-
-    function getTodayStr(offsetDays = 0) {
-      const d = new Date();
-      d.setDate(d.getDate() + offsetDays);
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      return `${yyyy}-${mm}-${dd}`;
     }
 
     async function apiCall(payload) {
@@ -420,7 +753,7 @@
         }
       } catch (err) {
         showLoader(false);
-        errBox.textContent = 'تعذر الاتصال بالخادم، تأكد من تفعيل صلاحية Anyone في إعدادات النشر.';
+        errBox.textContent = 'تعذر الاتصال بالخادم، تأكد من الاتصال بالإنترنت.';
         errBox.classList.remove('hidden');
       }
     }
@@ -432,13 +765,18 @@
       document.getElementById('loginScreen').classList.remove('hidden');
     }
 
+    function setFormTimeNow() {
+      document.getElementById('rxDispenseDate').value = getTodayStr(0);
+      document.getElementById('rxDispenseTime').value = getCurrentTimeStr();
+      calculateNextDate();
+    }
+
     function initApp() {
       document.getElementById('loginScreen').classList.add('hidden');
       document.getElementById('appScreen').classList.remove('hidden');
       document.getElementById('branchBadge').textContent = `الفرع: ${currentUser.branchName} (${currentUser.branchId})`;
 
-      document.getElementById('rxDispenseDate').value = getTodayStr(0);
-      calculateNextDate();
+      setFormTimeNow();
 
       if (currentUser.role === 'admin') {
         document.getElementById('adminControls').classList.remove('hidden');
@@ -475,14 +813,23 @@
         });
         showLoader(false);
         if (data.success) {
-          allRecords = (data.records || []).map(r => ({
-            ...r,
-            nationalId: toEnglishDigits(r.nationalId),
-            phone: formatLocalPhone(r.phone),
-            rxNumber: toEnglishDigits(r.rxNumber),
-            dispenseDate: normalizeDateStr(r.dispenseDate),
-            nextDate: normalizeDateStr(r.nextDate)
-          }));
+          allRecords = (data.records || []).map(r => {
+            const parsedDisp = parseDateTimeFromSheet(r.dispenseDate, r.notes);
+            const parsedNext = parseDateTimeFromSheet(r.nextDate, r.notes);
+            const cleanNotes = String(r.notes || '').replace(/\[⏰\d{2}:\d{2}\]\s*/g, '').trim();
+
+            return {
+              ...r,
+              nationalId: toEnglishDigits(r.nationalId),
+              phone: formatLocalPhone(r.phone),
+              rxNumber: toEnglishDigits(r.rxNumber),
+              dispenseDate: parsedDisp.datePart,
+              dispenseTime: parsedDisp.timePart,
+              nextDate: parsedNext.datePart,
+              nextTime: parsedNext.timePart,
+              notes: cleanNotes
+            };
+          });
           renderFollowUp();
           renderSearchTable();
         }
@@ -492,14 +839,18 @@
       }
     }
 
+    // حساب الموعد القادم تلقائياً مع الحفاظ على نفس الساعة والدقيقة
     function calculateNextDate() {
-      const disp = document.getElementById('rxDispenseDate').value;
+      const dispDate = document.getElementById('rxDispenseDate').value;
+      const dispTime = document.getElementById('rxDispenseTime').value || getCurrentTimeStr();
       const durInput = document.getElementById('rxDuration').value;
       const dur = durInput !== '' ? parseInt(durInput) : 30;
-      if (disp) {
-        const d = new Date(disp);
+
+      if (dispDate) {
+        const d = new Date(dispDate);
         d.setDate(d.getDate() + dur);
         document.getElementById('rxNextDate').value = d.toISOString().split('T')[0];
+        document.getElementById('rxNextTime').value = dispTime;
       }
     }
 
@@ -507,9 +858,12 @@
       const today = getTodayStr(0);
       const tomorrow = getTodayStr(1);
 
-      const todayRecs = allRecords.filter(r => r.nextDate && r.nextDate <= today);
-      const tomorrowRecs = allRecords.filter(r => r.nextDate === tomorrow);
-      const upcomingRecs = allRecords.filter(r => r.nextDate > tomorrow).sort((a, b) => a.nextDate.localeCompare(b.nextDate));
+      // ترتيب تصاعدي حسب التاريخ ثم الساعة والدقيقة (الأقرب أولاً)
+      const sortByTimeAsc = (a, b) => getTimestamp(a.nextDate, a.nextTime) - getTimestamp(b.nextDate, b.nextTime);
+
+      const todayRecs = allRecords.filter(r => r.nextDate && r.nextDate <= today).sort(sortByTimeAsc);
+      const tomorrowRecs = allRecords.filter(r => r.nextDate === tomorrow).sort(sortByTimeAsc);
+      const upcomingRecs = allRecords.filter(r => r.nextDate > tomorrow).sort(sortByTimeAsc);
 
       document.getElementById('statToday').textContent = todayRecs.length;
       document.getElementById('statTomorrow').textContent = tomorrowRecs.length;
@@ -536,7 +890,28 @@
         : '<p class="text-gray-400 text-sm col-span-2 text-center py-6">لا توجد وصفات مجدولة للأيام القادمة</p>';
     }
 
-    // بناء كارت المريض مع أزرار النسخ السريع لكل البيانات
+    // حساب شارة حالة الوقت لكل كارت
+    function getTimeStatusBadge(r) {
+      const nowMs = Date.now();
+      const targetMs = getTimestamp(r.nextDate, r.nextTime);
+      const diffMin = Math.round((targetMs - nowMs) / 60000);
+
+      if (r.nextDate < getTodayStr(0)) {
+        return `<span class="text-[11px] bg-red-100 text-red-700 font-extrabold px-2 py-0.5 rounded-full">⚠️ متأخرة من يوم سابق</span>`;
+      }
+      if (diffMin <= 0) {
+        return `<span class="text-[11px] bg-red-600 text-white font-extrabold px-2.5 py-0.5 rounded-full animate-pulse">🔥 متاح الآن للصرف!</span>`;
+      }
+      if (diffMin <= 15) {
+        return `<span class="text-[11px] bg-amber-500 text-white font-extrabold px-2.5 py-0.5 rounded-full">🚨 يفتح بعد ${diffMin} د</span>`;
+      }
+      if (diffMin <= 120) {
+        return `<span class="text-[11px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full">⏳ بعد ${diffMin} دقيقة</span>`;
+      }
+      return `<span class="text-[11px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">🗓️ مجدول</span>`;
+    }
+
+    // بناء كارت المريض مع الوقت بالدقيقة وأزرار النسخ والتأجيل السريع
     function createCardHTML(r, isToday) {
       let cleanPhone = toEnglishDigits(r.phone).replace(/\D/g, '');
       if (cleanPhone.startsWith('05')) cleanPhone = '966' + cleanPhone.substring(1);
@@ -545,23 +920,26 @@
       const msg = `السلام عليكم، معكم صيدلية شمس (${r.branchName}). نود إعلامك بأن الوصفة الخاصة بك عبر منصة "وصفتي" أصبحت جاهزة للصرف اليوم. يسعدنا زيارتكم للفرع لاستلامها، أو يمكننا توصيلها حتى باب المنزل. نسعد دائماً بخدمتكم`;
       const waLink = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
 
-      const isLate = r.nextDate < getTodayStr(0);
+      const isDueNow = getTimestamp(r.nextDate, r.nextTime) <= Date.now();
 
       return `
-        <div class="border rounded-xl p-4 bg-gray-50 hover:shadow-md transition flex flex-col justify-between ${isLate ? 'border-red-300 bg-red-50/30' : 'border-gray-200'}">
+        <div class="border rounded-xl p-4 bg-gray-50 hover:shadow-md transition flex flex-col justify-between ${isDueNow ? 'border-red-400 bg-red-50/20' : 'border-gray-200'}">
           <div>
-            <div class="flex justify-between items-start mb-2">
+            <div class="flex justify-between items-start mb-2 gap-2">
               <div>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
                   <h3 class="font-extrabold text-base text-gray-800">${r.patientName}</h3>
                   <button type="button" onclick="copyText('${r.patientName}', 'اسم المريض')" 
-                          class="bg-gray-200 hover:bg-emerald-600 hover:text-white text-gray-700 px-2 py-0.5 rounded text-[11px] font-bold transition" title="نسخ اسم المريض">📋 نسخ</button>
+                          class="bg-gray-200 hover:bg-emerald-600 hover:text-white text-gray-700 px-2 py-0.5 rounded text-[11px] font-bold transition">📋 نسخ</button>
                 </div>
                 <span class="text-xs text-gray-500 font-semibold">فرع: ${r.branchName}</span>
               </div>
-              <span class="bg-emerald-100 text-emerald-800 text-xs font-extrabold px-2.5 py-1 rounded-full">
-                ${r.price} ر.س
-              </span>
+              <div class="flex flex-col items-end gap-1">
+                <span class="bg-emerald-100 text-emerald-800 text-xs font-extrabold px-2.5 py-1 rounded-full">
+                  ${r.price} ر.س
+                </span>
+                ${getTimeStatusBadge(r)}
+              </div>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-700 my-3 bg-white p-2.5 rounded-lg border">
@@ -592,39 +970,57 @@
                 </button>
               </div>
 
-              <!-- الموعد القادم -->
-              <div class="flex items-center justify-between bg-gray-50 px-2 py-1.5 rounded border border-gray-100">
-                <div><span class="text-gray-400">الموعد:</span> <strong class="font-mono ${isLate ? 'text-red-600' : 'text-emerald-800'}">${r.nextDate}</strong></div>
-                ${isLate ? '<span class="text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded">متأخر</span>' : '<span class="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded">مجدول</span>'}
+              <!-- الموعد بالساعة والدقيقة -->
+              <div class="flex items-center justify-between bg-amber-50/60 px-2 py-1.5 rounded border border-amber-100">
+                <div>
+                  <span class="text-gray-400">الموعد:</span>
+                  <strong class="font-mono text-gray-900">${r.nextDate}</strong>
+                </div>
+                <strong class="font-mono text-xs bg-white px-1.5 py-0.5 rounded border border-amber-200 text-red-700">${formatTime12Ar(r.nextTime)}</strong>
               </div>
             </div>
             ${r.notes ? `<p class="text-xs text-amber-800 bg-amber-50 p-2 rounded mb-3">📝 <strong>ملاحظة:</strong> ${r.notes}</p>` : ''}
           </div>
 
-          <div class="flex flex-wrap gap-2 pt-2 border-t">
-            <a href="${waLink}" target="_blank" class="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg text-center flex items-center justify-center gap-1">
-              💬 واتساب جاهز
-            </a>
-            <button onclick="openRenewModal('${r.id}', '${r.branchId}', '${r.patientName}', '${r.rxNumber}', ${r.duration})" 
-                    class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold py-2 px-3 rounded-lg">
-              ✅ تم الصرف والتجديد
-            </button>
+          <div class="space-y-2 pt-2 border-t">
+            <div class="flex flex-wrap gap-2">
+              <a href="${waLink}" target="_blank" class="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg text-center flex items-center justify-center gap-1">
+                💬 واتساب جاهز
+              </a>
+              <button onclick="openRenewModal('${r.id}', '${r.branchId}', '${r.patientName}', '${r.rxNumber}', ${r.duration})" 
+                      class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold py-2 px-3 rounded-lg">
+                ✅ تم الصرف والتجديد
+              </button>
+            </div>
+
+            <!-- شريط التأجيل السريع (Snooze) -->
             ${isToday ? `
-            <button onclick="postponeTomorrow('${r.id}', '${r.branchId}')" 
-                    class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold py-2 px-3 rounded-lg" title="تأجيل للغد">
-              ⏳ للغد
-            </button>` : ''}
+            <div class="flex items-center justify-between bg-gray-100 px-2.5 py-1.5 rounded-lg text-xs">
+              <span class="text-gray-500 font-bold text-[11px]">⏳ تأجيل سريع:</span>
+              <div class="flex gap-1.5">
+                <button onclick="snoozeRecordMinutes('${r.id}', '${r.branchId}', 15)" class="bg-white hover:bg-amber-100 text-gray-700 border px-2 py-0.5 rounded font-bold text-[11px] transition">+15 د</button>
+                <button onclick="snoozeRecordMinutes('${r.id}', '${r.branchId}', 60)" class="bg-white hover:bg-amber-100 text-gray-700 border px-2 py-0.5 rounded font-bold text-[11px] transition">+1 ساعة</button>
+                <button onclick="postponeTomorrow('${r.id}', '${r.branchId}', '${r.nextTime}')" class="bg-white hover:bg-amber-100 text-gray-700 border px-2 py-0.5 rounded font-bold text-[11px] transition">للغد</button>
+              </div>
+            </div>` : ''}
           </div>
         </div>
       `;
     }
 
+    // حفظ وصفة جديدة مع إرفاق الساعة والدقيقة بصيغة نصية محمية ('YYYY-MM-DD HH:mm)
     async function handleAddRx(e) {
       e.preventDefault();
       const branchId = currentUser.role === 'admin' 
         ? document.getElementById('addRxBranchSelect').value 
         : currentUser.branchId;
 
+      const dispDate = document.getElementById('rxDispenseDate').value;
+      const dispTime = document.getElementById('rxDispenseTime').value || '09:00';
+      const nextDate = document.getElementById('rxNextDate').value;
+      const nextTime = document.getElementById('rxNextTime').value || dispTime;
+
+      // وضع علامة التنصيص المفردة في البداية يجبر Google Sheets على حفظ التاريخ والوقت كنص دون تحويله لـ GM
       const payload = {
         action: 'addRecord',
         branchId: branchId,
@@ -633,9 +1029,9 @@
         phone: formatLocalPhone(document.getElementById('rxPhone').value.trim()),
         rxNumber: toEnglishDigits(document.getElementById('rxNumber').value.trim()),
         price: toEnglishDigits(document.getElementById('rxPrice').value.trim()),
-        dispenseDate: document.getElementById('rxDispenseDate').value,
+        dispenseDate: `'${dispDate} ${dispTime}`,
         duration: toEnglishDigits(document.getElementById('rxDuration').value),
-        nextDate: document.getElementById('rxNextDate').value,
+        nextDate: `'${nextDate} ${nextTime}`,
         notes: document.getElementById('rxNotes').value.trim()
       };
 
@@ -645,11 +1041,10 @@
         showLoader(false);
 
         if (data.success) {
-          alert('✅ تم تسجيل الوصفة بنجاح في شيت الفرع!');
+          showCopyToast('✅ تم حفظ الوصفة وجدولتها بالرادار بالساعة والدقيقة!');
           document.getElementById('addRxForm').reset();
-          document.getElementById('rxDispenseDate').value = getTodayStr(0);
           document.getElementById('rxDuration').value = 30;
-          calculateNextDate();
+          setFormTimeNow();
           loadRecords();
           switchTab('followUp');
         } else {
@@ -667,6 +1062,7 @@
       document.getElementById('renewModalPatient').textContent = `المريض: ${name}`;
       document.getElementById('renewRxNumber').value = rxNum;
       document.getElementById('renewDispenseDate').value = getTodayStr(0);
+      document.getElementById('renewDispenseTime').value = getCurrentTimeStr();
       document.getElementById('renewDuration').value = duration || 30;
       calcRenewNextDate();
       document.getElementById('renewModal').classList.remove('hidden');
@@ -678,47 +1074,81 @@
 
     function calcRenewNextDate() {
       const disp = document.getElementById('renewDispenseDate').value;
+      const dispTime = document.getElementById('renewDispenseTime').value || getCurrentTimeStr();
       const dur = parseInt(document.getElementById('renewDuration').value) || 30;
       if (disp) {
         const d = new Date(disp);
         d.setDate(d.getDate() + dur);
         document.getElementById('renewNextDate').value = d.toISOString().split('T')[0];
+        document.getElementById('renewNextTime').value = dispTime;
       }
     }
 
     async function submitRenew(e) {
       e.preventDefault();
+      const dispDate = document.getElementById('renewDispenseDate').value;
+      const dispTime = document.getElementById('renewDispenseTime').value || '09:00';
+      const nextDate = document.getElementById('renewNextDate').value;
+      const nextTime = document.getElementById('renewNextTime').value || dispTime;
+
       const payload = {
         action: 'updateRecord',
         updateType: 'renew',
         id: document.getElementById('renewRecordId').value,
         branchId: document.getElementById('renewBranchId').value,
         newRxNumber: toEnglishDigits(document.getElementById('renewRxNumber').value.trim()),
-        newDispenseDate: document.getElementById('renewDispenseDate').value,
+        newDispenseDate: `'${dispDate} ${dispTime}`,
         newDuration: toEnglishDigits(document.getElementById('renewDuration').value),
-        newNextDate: document.getElementById('renewNextDate').value
+        newNextDate: `'${nextDate} ${nextTime}`
       };
 
       closeRenewModal();
       showLoader(true);
       await apiCall(payload);
       await loadRecords();
+      showCopyToast('✅ تم تجديد الوصفة للشهر القادم بنجاح!');
     }
 
-    async function postponeTomorrow(id, branchId) {
-      if (!confirm('هل تريد تأجيل موعد التذكير بهذه الوصفة إلى الغد؟')) return;
+    // تأجيل سريع بالدقائق (+15 دقيقة أو +60 دقيقة)
+    async function snoozeRecordMinutes(id, branchId, addMinutes) {
+      const target = new Date(Date.now() + addMinutes * 60000);
+      const yyyy = target.getFullYear();
+      const mm = String(target.getMonth() + 1).padStart(2, '0');
+      const dd = String(target.getDate()).padStart(2, '0');
+      const hh = String(target.getHours()).padStart(2, '0');
+      const min = String(target.getMinutes()).padStart(2, '0');
+
+      const newNextStr = `'${yyyy}-${mm}-${dd} ${hh}:${min}`;
+
       showLoader(true);
       await apiCall({
         action: 'updateRecord',
         updateType: 'postpone',
         id: id,
         branchId: branchId,
-        newNextDate: getTodayStr(1)
+        newNextDate: newNextStr
       });
       await loadRecords();
+      showCopyToast(`⏳ تم تأجيل موعد التنبيه ${addMinutes} دقيقة`);
     }
 
-    // جدول البحث السريع مع أزرار النسخ للهوية والوصفة والجوال والاسم
+    // تأجيل للغد في نفس الساعة
+    async function postponeTomorrow(id, branchId, currentNextTime = '09:00') {
+      const tmrw = getTodayStr(1);
+      const newNextStr = `'${tmrw} ${currentNextTime}`;
+      showLoader(true);
+      await apiCall({
+        action: 'updateRecord',
+        updateType: 'postpone',
+        id: id,
+        branchId: branchId,
+        newNextDate: newNextStr
+      });
+      await loadRecords();
+      showCopyToast('⏳ تم تأجيل الوصفة إلى الغد في نفس الموعد');
+    }
+
+    // جدول البحث السريع
     function renderSearchTable() {
       const q = toEnglishDigits(document.getElementById('searchInput').value.trim().toLowerCase());
       const tbody = document.getElementById('allRecordsTable');
@@ -734,29 +1164,32 @@
           <td class="p-3 font-bold">
             <div class="flex items-center gap-1.5">
               <span>${r.patientName}</span>
-              <button onclick="copyText('${r.patientName}', 'اسم المريض')" class="bg-gray-100 hover:bg-emerald-600 hover:text-white text-gray-600 px-1.5 py-0.5 rounded text-xs transition" title="نسخ الاسم">📋</button>
+              <button onclick="copyText('${r.patientName}', 'اسم المريض')" class="bg-gray-100 hover:bg-emerald-600 hover:text-white text-gray-600 px-1.5 py-0.5 rounded text-xs transition">📋</button>
             </div>
           </td>
           <td class="p-3">
             <div class="flex items-center gap-1.5">
               <span class="font-mono">${r.nationalId}</span>
-              <button onclick="copyText('${r.nationalId}', 'رقم الهوية')" class="bg-gray-100 hover:bg-emerald-600 hover:text-white text-gray-600 px-2 py-0.5 rounded text-xs font-bold transition" title="نسخ الهوية">📋 نسخ</button>
+              <button onclick="copyText('${r.nationalId}', 'رقم الهوية')" class="bg-gray-100 hover:bg-emerald-600 hover:text-white text-gray-600 px-2 py-0.5 rounded text-xs font-bold transition">📋 نسخ</button>
             </div>
           </td>
           <td class="p-3">
             <div class="flex items-center gap-1.5">
               <span class="font-mono" dir="ltr">${r.phone}</span>
-              <button onclick="copyText('${r.phone}', 'رقم الجوال')" class="bg-gray-100 hover:bg-emerald-600 hover:text-white text-gray-600 px-2 py-0.5 rounded text-xs font-bold transition" title="نسخ الجوال">📋 نسخ</button>
+              <button onclick="copyText('${r.phone}', 'رقم الجوال')" class="bg-gray-100 hover:bg-emerald-600 hover:text-white text-gray-600 px-2 py-0.5 rounded text-xs font-bold transition">📋 نسخ</button>
             </div>
           </td>
           <td class="p-3">
             <div class="flex items-center gap-1.5">
               <span class="font-mono font-bold text-emerald-700">${r.rxNumber}</span>
-              <button onclick="copyText('${r.rxNumber}', 'رقم الوصفة')" class="bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 px-2 py-0.5 rounded text-xs font-bold transition" title="نسخ الوصفة">📋 نسخ</button>
+              <button onclick="copyText('${r.rxNumber}', 'رقم الوصفة')" class="bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 px-2 py-0.5 rounded text-xs font-bold transition">📋 نسخ</button>
             </div>
           </td>
           <td class="p-3">${r.price} ر.س</td>
-          <td class="p-3 font-bold text-emerald-800">${r.nextDate}</td>
+          <td class="p-3 font-mono text-xs">
+            <span class="font-bold text-emerald-800">${r.nextDate}</span>
+            <span class="bg-red-50 text-red-700 font-bold px-1.5 py-0.5 rounded mr-1">${formatTime12Ar(r.nextTime)}</span>
+          </td>
           <td class="p-3 text-xs text-gray-500">${r.branchName}</td>
           <td class="p-3">
             <button onclick="openRenewModal('${r.id}', '${r.branchId}', '${r.patientName}', '${r.rxNumber}', ${r.duration})" 
